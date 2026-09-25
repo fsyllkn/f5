@@ -1,0 +1,177 @@
+{
+  "$schema": "https://raw.githubusercontent.com/reF1nd/sing-box/reF1nd-testing-next/docs/schema.json",
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "output": "/data/adb/modules/netproxy/logs/sing-box.log",
+    "timestamp": true
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "/data/adb/modules/netproxy/config/singbox/cache.db"
+    },
+    "clash_api": {
+      "default_mode": "Rule",
+      "external_controller": "127.0.0.1:9999",
+      "secret": "singbox"
+    }
+  },
+  "services": [
+    {
+      "type": "api",
+      "listen": "127.0.0.1",
+      "listen_port": 9090,
+      "secret": "singbox",
+      "dashboard": {
+        "enabled": true,
+        "path": "/data/adb/modules/netproxy/webroot/sing-box-dashboard",
+        "http_client": "s-download"
+      }
+    }
+  ],
+  "http_clients": [
+    {
+      "tag": "s-download",
+      "detour": "Proxy"
+    }
+  ],
+  "dns": {
+    "servers": [
+      {
+        "tag": "dns-proxy",
+        "type": "group",
+        "servers": ["cloudflare","google"]
+      },
+      {
+        "tag": "dns-direct",
+        "type": "group",
+        "servers": ["ali","tencent"]
+      },
+      {
+        "type": "hosts",
+        "tag": "hosts",
+        "predefined": {
+          "doh.pub": ["120.53.53.53","1.12.12.12"],
+          "cloudflare-dns.com": ["1.1.1.1","1.0.0.1"],
+          "dns.google": ["8.8.8.8","8.8.4.4"],
+          "dns.alidns.com": ["223.5.5.5","223.6.6.6"]
+        }
+      },
+      {
+        "tag": "cloudflare",
+        "type": "https",
+        "server": "cloudflare-dns.com",
+        "domain_resolver": "hosts",
+        "detour": "Proxy"
+      },
+      {
+        "tag": "google",
+        "type": "https",
+        "server": "dns.google",
+        "domain_resolver": "hosts",
+        "detour": "Proxy"
+      },
+      {
+        "tag": "ali",
+        "type": "https",
+        "server": "dns.alidns.com",
+        "domain_resolver": "hosts"
+      },
+      {
+        "tag": "tencent",
+        "type": "https",
+        "server": "doh.pub",
+        "domain_resolver": "hosts"
+      }
+    ],
+    "rules": [
+      {"clash_mode":"Global","action":"route","server":"dns-proxy"},
+      {"clash_mode":"Direct","action":"route","server":"dns-direct"},
+      {"rule_set":["direct","geosite/apple-cn"],"action":"route","server":"dns-direct"},
+      {"rule_set":["proxy"],"action":"route","server":"dns-proxy"},
+      {
+        "type":"logical","mode":"and","rules":[
+          {"clash_mode":"AllowAds","invert":true},
+          {"rule_set":["block","Ads_AWAvenue","geosite/category-ads-all"]}
+        ],"action":"reject"
+      },
+      {"rule_set":["geosite/category-ai-!cn","geosite/google","geosite/telegram"],"action":"route","server":"dns-proxy"},
+      {"rule_set":["geosite/cn"],"action":"route","server":"dns-direct"},
+      {"rule_set":["geosite/geolocation-!cn"],"action":"route","server":"dns-proxy"}
+    ],
+    "final":"dns-proxy",
+    "optimistic":true,
+    "strategy":"prefer_ipv4"
+  },
+  "inbounds": [
+    {"type":"mixed","tag":"mixed-in","listen":"127.0.0.1","listen_port":7080}
+  ],
+  "route": {
+    "default_domain_resolver":"dns-direct",
+    "rule_set":[
+      {"type":"local","tag":["block","direct","proxy"],"format":"source","path":"./rules/local/{tag}.json"},
+      {
+        "type":"remote","tag":"Ads_AWAvenue","format":"source",
+        "url":"https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Singbox.json",
+        "update_interval":"24h","path":"./rules/remote/Ads_AWAvenue.json"
+      },
+      {
+        "type":"remote",
+        "tag":["geosite/category-ads-all","geosite/apple-cn","geosite/category-ai-!cn","geosite/google","geosite/geolocation-!cn","geosite/cn","geoip/cn","geoip/telegram","geosite/telegram"],
+        "format":"binary",
+        "url":"https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/{tag}.srs",
+        "update_interval":"24h","path":"./rules/remote/{tag}.srs"
+      }
+    ],
+    "rules":[
+      {"action":"sniff"},
+      {"type":"logical","mode":"or","rules":[{"port":53},{"protocol":"dns"}],"action":"hijack-dns"},
+      {"clash_mode":"Global","action":"route","outbound":"🚀 节点选择"},
+      {"clash_mode":"Direct","action":"route","outbound":"direct"},
+      {"rule_set":"proxy","action":"route","outbound":"🚀 节点选择"},
+      {"rule_set":"direct","action":"route","outbound":"direct"},
+      {
+        "type":"logical","mode":"and","rules":[
+          {"clash_mode":"AllowAds","invert":true},
+          {"rule_set":["block","Ads_AWAvenue","geosite/category-ads-all"]}
+        ],"action":"reject"
+      },
+      {"rule_set":["geosite/apple-cn","geosite/cn"],"action":"route","outbound":"direct"},
+      {"rule_set":"geosite/category-ai-!cn","action":"route","outbound":"🤖 AI 平台"},
+      {"rule_set":"geosite/telegram","action":"route","outbound":"📲 电报消息"},
+      {"rule_set":"geosite/google","action":"route","outbound":"🚀 节点选择"},
+      {"rule_set":["geosite/geolocation-!cn"],"action":"route","outbound":"🚀 节点选择"},
+      {"action":"resolve","match_only":true},
+      {"ip_is_private":true,"outbound":"direct"},
+      {"rule_set":"geoip/cn","action":"route","outbound":"direct"},
+      {"rule_set":["geoip/telegram"],"action":"route","outbound":"📲 电报消息"}
+    ],
+    "find_process":true,
+    "auto_detect_interface":true,
+    "final":"🐟 漏网之鱼"
+  },
+  "outbounds":[
+    {
+      "type":"selector","tag":"🚀 节点选择",
+      "outbounds":["Proxy","direct"],"default":"Proxy",
+      "interrupt_exist_connections":true
+    },
+    {
+      "type":"selector","tag":"📲 电报消息",
+      "outbounds":["🚀 节点选择","direct"],"default":"🚀 节点选择",
+      "interrupt_exist_connections":true
+    },
+    {
+      "type":"selector","tag":"🤖 AI 平台",
+      "use_all_providers":true,
+      "exclude":"(?i)(🇭🇰|香港|港区|港區|港|hong[ _-]?kong|(^|[^a-z])hk([^a-z]|$)|🇲🇴|澳门|澳門|macau|macao|(^|[^a-z])mo([^a-z]|$))",
+      "interrupt_exist_connections":true
+    },
+    {
+      "type":"selector","tag":"🐟 漏网之鱼",
+      "outbounds":["🚀 节点选择","direct"],"default":"🚀 节点选择",
+      "interrupt_exist_connections":true
+    }
+  ]
+}
