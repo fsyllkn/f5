@@ -78,13 +78,16 @@ jobs:
 
       - name: Build native component
         shell: bash
-        working-directory: netproxy-src
-        env:
-          NETPROXY_CI_BUILD_DIR: ${{ runner.temp }}/netproxy-build
+        working-directory: netproxy-src/src/native/netproxy
         run: |
           set -euo pipefail
-          sh tests/ci_verify.sh
-          install -m 0755 "$NETPROXY_CI_BUILD_DIR/netproxyctl-android" src/module/bin/netproxyctl
+          go test ./...
+          go vet ./...
+          CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build \
+            -trimpath -buildvcs=false -pgo=auto -ldflags='-s -w -buildid=' \
+            -o ../../../module/bin/netproxyctl ./cmd/netproxyctl
+          test -s ../../../module/bin/netproxyctl
+          file ../../../module/bin/netproxyctl | grep -q 'ARM aarch64'
 
       - name: Build WebUI
         shell: bash
